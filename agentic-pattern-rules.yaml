@@ -189,6 +189,20 @@ frameworks:
         confidence: medium
         symbols: [ChatMemoryBuffer, VectorMemory, ComposableMemory]
 
+  a2a_sdk:
+    package: [a2a-sdk, "@a2a-js/sdk"]
+    verified: 2026-07   # symbols taken from google/a2a-samples usage frequency
+    rules:
+      - pattern: protocol_integration
+        confidence: high
+        imports: [a2a, a2a.server, a2a.types]
+        symbols: [A2AStarletteApplication, DefaultRequestHandler, AgentCard, AgentSkill, AgentExecutor]
+        note: "Serving an A2A endpoint = standardized agent-to-agent integration (VII-B)"
+      - pattern: handoff
+        confidence: medium
+        symbols: [A2AClient, ClientFactory]
+        note: "A2A client usage = delegating tasks to remote agents (V-E); medium because delegation intent needs the call site, which Tier 1 cannot confirm"
+
 # ---------------------------------------------------------------------------
 # Framework-agnostic Tier 1 signals (config files, not code)
 # ---------------------------------------------------------------------------

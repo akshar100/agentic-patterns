@@ -12,7 +12,7 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-EXPECTED = {"structured_workflow", "react_loop", "checkpointing", "protocol_integration"}
+EXPECTED = {"structured_workflow", "react_loop", "checkpointing", "protocol_integration", "handoff"}
 
 def main():
     out = Path(tempfile.mkdtemp()) / "scan.json"

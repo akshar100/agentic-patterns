@@ -67,27 +67,33 @@ SKIP_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__",
 
 
 # ---------------------------------------------------------------- stage 1
-def read_dependencies(repo: Path) -> set[str]:
-    deps = set()
+def read_dependencies(repo: Path) -> dict[str, str]:
+    """Map of lowercase package name -> relative dep-file path where first seen."""
+    deps: dict[str, str] = {}
+
+    def add(name: str, src: Path):
+        deps.setdefault(name.lower(), str(src.relative_to(repo)))
+
     for req in repo.rglob("requirements*.txt"):
         if any(p in SKIP_DIRS for p in req.parts):
             continue
         for line in req.read_text(errors="ignore").splitlines():
             line = line.split("#")[0].strip()
             if line:
-                deps.add(re.split(r"[<>=\[~!; ]", line)[0].lower())
+                add(re.split(r"[<>=\[~!; ]", line)[0], req)
     for pp in repo.rglob("pyproject.toml"):
         if any(p in SKIP_DIRS for p in pp.parts):
             continue
         for m in re.finditer(r'"([A-Za-z0-9_.@/\-]+?)(?:[<>=\[~!].*?)?"', pp.read_text(errors="ignore")):
-            deps.add(m.group(1).lower())
+            add(m.group(1), pp)
     for pj in repo.rglob("package.json"):
         if any(p in SKIP_DIRS for p in pj.parts):
             continue
         try:
             data = json.loads(pj.read_text(errors="ignore"))
             for key in ("dependencies", "devDependencies"):
-                deps.update(k.lower() for k in data.get(key, {}))
+                for k in data.get(key, {}):
+                    add(k, pj)
         except json.JSONDecodeError:
             pass
     return deps
@@ -231,7 +237,7 @@ def match_rules(rules: dict, deps: set, collectors) -> tuple[list, list]:
     return frameworks_found, pattern_map
 
 
-def match_config_signals(rules, repo: Path, pattern_map, frameworks_found):
+def match_config_signals(rules, repo: Path, pattern_map, frameworks_found, dep_files=None):
     for sig in rules.get("config_signals", []):
         if sig.get("require_cooccurrence") and not frameworks_found:
             continue
@@ -243,6 +249,15 @@ def match_config_signals(rules, repo: Path, pattern_map, frameworks_found):
                     sig["pattern"], {"confidence": sig.get("confidence", "medium"), "evidence": []})
                 entry["evidence"].append({
                     "type": "config", "file": str(hit.relative_to(repo)),
+                    "rule_id": f"config/{sig['pattern']}"})
+        # package_any: dependency alone signals the pattern (e.g. `mcp` SDK)
+        for pkg in sig.get("package_any", []):
+            src = (dep_files or {}).get(pkg.lower())
+            if src:
+                entry = pattern_map.setdefault(
+                    sig["pattern"], {"confidence": sig.get("confidence", "medium"), "evidence": []})
+                entry["evidence"].append({
+                    "type": "config", "file": src, "symbol": pkg,
                     "rule_id": f"config/{sig['pattern']}"})
 
 
@@ -282,7 +297,7 @@ def main():
     deps = read_dependencies(repo)
     collectors = collect_repo_symbols(repo)
     frameworks_found, pattern_map = match_rules(rules, deps, collectors)
-    match_config_signals(rules, repo, pattern_map, frameworks_found)
+    match_config_signals(rules, repo, pattern_map, frameworks_found, dep_files=deps)
     result = build_result(repo, rules.get("meta", {}).get("schema_version", "?"),
                           frameworks_found, pattern_map)
     json.dump(result, open(out, "w"), indent=2)
