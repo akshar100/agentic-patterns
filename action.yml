@@ -1,0 +1,21 @@
+name: 'Agentic Architecture Auto-Detector'
+description: 'Scans your codebase for agentic AI patterns, generates badges, and injects them into your README.'
+inputs:
+  target_dir:
+    description: 'Directory to scan for code'
+    required: false
+    default: '.'
+  readme_path:
+    description: 'Path to the README file'
+    required: false
+    default: 'README.md'
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    - name: Run Pattern Detector
+      shell: bash
+      run: python ${{ github.action_path }}/generate_badges.py "${{ inputs.target_dir }}" "${{ inputs.readme_path }}"
