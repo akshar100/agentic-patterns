@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agenticprotocols.dev/schemas/scan-result-v0.1.json",
+  "title": "Agentic Pattern Scan Result",
+  "description": "Output of one repo scan. Contract between the scanner, the badge renderer, and the agenticprotocols.dev index. Pattern IDs and section refs follow the taxonomy in 'Architectural Patterns for Agentic AI Systems'.",
+  "type": "object",
+  "required": ["schema_version", "tool", "repo", "patterns", "summary"],
+  "properties": {
+    "schema_version": { "const": "0.1" },
+    "tool": {
+      "type": "object",
+      "required": ["name", "version", "rules_version"],
+      "properties": {
+        "name": { "type": "string" },
+        "version": { "type": "string" },
+        "rules_version": { "type": "string", "description": "Version of agentic-pattern-rules.yaml used" }
+      }
+    },
+    "repo": {
+      "type": "object",
+      "required": ["url", "commit", "scanned_at"],
+      "properties": {
+        "url": { "type": "string", "format": "uri" },
+        "commit": { "type": "string", "minLength": 7, "description": "Git SHA the evidence line numbers refer to — evidence is only verifiable against this commit" },
+        "scanned_at": { "type": "string", "format": "date-time" },
+        "languages": { "type": "array", "items": { "enum": ["python", "typescript", "javascript"] } }
+      }
+    },
+    "frameworks": {
+      "type": "array",
+      "description": "Framework fingerprints found (Tier 1 package/import level)",
+      "items": {
+        "type": "object",
+        "required": ["id", "source"],
+        "properties": {
+          "id": { "type": "string", "description": "Key from rules table, e.g. 'langgraph_langchain'" },
+          "version_detected": { "type": "string" },
+          "source": { "enum": ["dependency", "import", "both"] }
+        }
+      }
+    },
+    "patterns": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "section", "tier", "status", "confidence", "evidence"],
+        "properties": {
+          "id": {
+            "enum": [
+              "react_loop", "plan_then_execute", "search_over_actions", "reflection",
+              "code_as_action", "structured_workflow", "orchestrator_worker",
+              "peer_debate_ensemble", "role_based_team", "conversational_multi_agent",
+              "handoff", "context_management", "episodic_memory", "procedural_memory",
+              "shared_memory_blackboard", "checkpointing", "human_in_the_loop",
+              "protocol_integration", "sandboxing"
+            ]
+          },
+          "name": { "type": "string", "description": "Human-readable name, e.g. 'ReAct Loop'" },
+          "abbrev": { "type": "string", "maxLength": 12, "description": "Short form for badge rendering, e.g. 'ReAct'" },
+          "section": { "type": "string", "description": "Paper section, e.g. 'IV-A'" },
+          "tier": { "enum": [1, 2, 3], "description": "1 = symbol match, 2 = structural heuristic, 3 = LLM classification" },
+          "status": {
+            "enum": ["detected", "inferred"],
+            "description": "detected = deterministic static analysis (tiers 1-2); inferred = LLM-assisted (tier 3). Drives badge color."
+          },
+          "confidence": { "enum": ["high", "medium", "low"] },
+          "evidence": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Every pattern claim must cite at least one verifiable location",
+            "items": {
+              "type": "object",
+              "required": ["type", "file"],
+              "properties": {
+                "type": { "enum": ["symbol", "kwarg", "config", "structure", "llm_inference"] },
+                "file": { "type": "string" },
+                "line": { "type": "integer", "minimum": 1 },
+                "symbol": { "type": "string", "description": "The matched symbol/kwarg, e.g. 'StateGraph'" },
+                "rule_id": { "type": "string", "description": "Which rule fired, e.g. 'langgraph_langchain/structured_workflow'" },
+                "excerpt": { "type": "string", "maxLength": 200, "description": "Short source excerpt for human review" },
+                "rationale": { "type": "string", "description": "For llm_inference evidence only: model's stated reason" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "required": ["pattern_count", "detected_count", "inferred_count"],
+      "properties": {
+        "pattern_count": { "type": "integer" },
+        "detected_count": { "type": "integer" },
+        "inferred_count": { "type": "integer" },
+        "dimensions": {
+          "type": "object",
+          "description": "Which of the taxonomy's four dimensions have at least one pattern hit; drives the badge glyph",
+          "properties": {
+            "control_flow": { "type": "boolean" },
+            "agent_multiplicity": { "type": "boolean" },
+            "memory_scope": { "type": "boolean" },
+            "human_involvement": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    "badge": {
+      "type": "object",
+      "description": "Render-ready outputs. shields_endpoint follows the shields.io endpoint schema so users can choose shields rendering instead of the self-hosted SVG.",
+      "properties": {
+        "shields_endpoint": {
+          "type": "object",
+          "properties": {
+            "schemaVersion": { "const": 1 },
+            "label": { "type": "string" },
+            "message": { "type": "string" },
+            "color": { "type": "string" }
+          }
+        },
+        "svg_url": { "type": "string", "format": "uri" }
+      }
+    }
+  }
+}

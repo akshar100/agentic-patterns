@@ -1,21 +1,80 @@
-name: 'Agentic Architecture Auto-Detector'
-description: 'Scans your codebase for agentic AI patterns, generates badges, and injects them into your README.'
+name: "Agentic Pattern Linter"
+description: >-
+  Statically detects agentic AI architectural patterns (per the peer-reviewed
+  taxonomy in "Architectural Patterns for Agentic AI Systems") and generates
+  an evidence-backed SVG badge. Every pattern claim cites file:line evidence.
+author: "agenticprotocols.dev"
+branding:
+  icon: "grid"
+  color: "green"
+
 inputs:
-  target_dir:
-    description: 'Directory to scan for code'
+  badge-path:
+    description: "Where to write the badge SVG"
     required: false
-    default: '.'
-  readme_path:
-    description: 'Path to the README file'
+    default: ".github/agentic-badge.svg"
+  scan-path:
+    description: "Where to write the scan result JSON (the evidence file)"
     required: false
-    default: 'README.md'
+    default: ".github/agentic-scan.json"
+  badge-style:
+    description: "full (named patterns) or compact (count only)"
+    required: false
+    default: "full"
+  inject-readme:
+    description: "If 'true', inject the badge embed between AGENTIC_BADGES markers in README"
+    required: false
+    default: "true"
+  readme-path:
+    description: "Path to the README for marker injection"
+    required: false
+    default: "README.md"
+
+outputs:
+  pattern-count:
+    description: "Number of patterns detected"
+    value: ${{ steps.scan.outputs.pattern-count }}
+
 runs:
-  using: 'composite'
+  using: "composite"
   steps:
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
-        python-version: '3.10'
-    - name: Run Pattern Detector
+        python-version: "3.12"
+
+    - name: Install linter dependencies
       shell: bash
-      run: python ${{ github.action_path }}/generate_badges.py "${{ inputs.target_dir }}" "${{ inputs.readme_path }}"
+      run: pip install --quiet pyyaml
+
+    - name: Scan repository
+      id: scan
+      shell: bash
+      env:
+        SCAN_PATH: ${{ inputs.scan-path }}
+      run: |
+        python "${{ github.action_path }}/scanner.py" \
+          "${{ github.workspace }}" \
+          "${{ github.action_path }}/agentic-pattern-rules.yaml" \
+          "$SCAN_PATH"
+        python "${{ github.action_path }}/pin_commit.py" "$SCAN_PATH" >> "$GITHUB_OUTPUT"
+
+    - name: Render badge
+      shell: bash
+      env:
+        SCAN_PATH: ${{ inputs.scan-path }}
+        BADGE_PATH: ${{ inputs.badge-path }}
+        BADGE_STYLE: ${{ inputs.badge-style }}
+      run: |
+        STYLE_FLAG=""
+        if [ "$BADGE_STYLE" = "compact" ]; then STYLE_FLAG="--style compact"; fi
+        python "${{ github.action_path }}/badge.py" "$SCAN_PATH" "$BADGE_PATH" $STYLE_FLAG
+
+    - name: Inject badge into README
+      if: ${{ inputs.inject-readme == 'true' }}
+      shell: bash
+      env:
+        README_PATH: ${{ inputs.readme-path }}
+        BADGE_PATH: ${{ inputs.badge-path }}
+        SCAN_PATH: ${{ inputs.scan-path }}
+      run: python "${{ github.action_path }}/inject_readme.py" "$README_PATH" "$BADGE_PATH" "$SCAN_PATH"

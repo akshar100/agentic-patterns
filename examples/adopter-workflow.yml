@@ -1,0 +1,33 @@
+# Copy this file into your repo as .github/workflows/agentic-badge.yml
+# and replace akshar100/agentic-patterns@main with a tagged ref (@v0) once released.
+
+name: Agentic pattern badge
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write   # required to commit the refreshed badge
+
+jobs:
+  badge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: akshar100/agentic-patterns@main
+        with:
+          badge-path: .github/agentic-badge.svg
+          scan-path: .github/agentic-scan.json
+          badge-style: full
+          inject-readme: "true"
+
+      - name: Commit badge if changed
+        run: |
+          git config user.name "agentic-pattern-linter[bot]"
+          git config user.email "bot@agenticprotocols.dev"
+          git add .github/agentic-badge.svg .github/agentic-scan.json README.md
+          git diff --cached --quiet || git commit -m "chore: refresh agentic pattern badge"
+          git push

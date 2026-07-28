@@ -1,0 +1,235 @@
+# Agentic Pattern Linter — Tier 1 Rules Table (v0.1)
+# Maps framework symbols to the taxonomy in "Architectural Patterns for Agentic AI Systems"
+# Pattern IDs reference paper sections:
+#   react_loop (IV-A), plan_then_execute (IV-B), search_over_actions (IV-C),
+#   reflection (IV-D), code_as_action (IV-E), structured_workflow (IV-F),
+#   orchestrator_worker (V-A), peer_debate_ensemble (V-B), role_based_team (V-C),
+#   conversational_multi_agent (V-D), handoff (V-E),
+#   context_management (VI-A), episodic_memory (VI-B), procedural_memory (VI-C),
+#   shared_memory_blackboard (VI-D), checkpointing (VI-E),
+#   human_in_the_loop (VII-A), protocol_integration (VII-B), sandboxing (VII-C)
+#
+# Rule semantics:
+#   package: dependency-file match (requirements.txt / pyproject.toml / package.json)
+#   imports: module paths seen in import statements (AST-level, not regex on strings)
+#   symbols: call/attribute expressions that confirm actual use (import alone = weak signal)
+#   confidence: high = symbol implies pattern by construction; medium = strong correlation
+# NOTE: verify symbols against current docs before release; framework APIs churn.
+# Entries marked verified:2026-07 were checked against docs in July 2026.
+
+meta:
+  taxonomy_source: "Desai, Architectural Patterns for Agentic AI Systems (2026)"
+  schema_version: 0.1
+  languages: [python, typescript]
+
+frameworks:
+
+  langgraph_langchain:
+    package: [langgraph, langchain, "@langchain/langgraph"]
+    verified: 2026-07
+    rules:
+      - pattern: structured_workflow
+        confidence: high
+        imports: [langgraph.graph]
+        symbols: [StateGraph, add_node, add_edge, add_conditional_edges]
+        note: "Explicit graph = developer-owned control flow with agentic islands (IV-F)"
+      - pattern: react_loop
+        confidence: high
+        imports: [langchain.agents, langgraph.prebuilt]
+        symbols: [create_agent, create_react_agent]   # create_agent is current; create_react_agent is legacy but common in the wild
+      - pattern: checkpointing
+        confidence: high
+        imports: [langgraph.checkpoint]
+        symbols: [MemorySaver, SqliteSaver, PostgresSaver]
+        also_match_kwargs: [checkpointer]
+      - pattern: human_in_the_loop
+        confidence: high
+        symbols: [interrupt, interrupt_before, interrupt_after, Command]
+      - pattern: episodic_memory
+        confidence: medium
+        imports: [langgraph.store, langmem]
+        symbols: [BaseStore, InMemoryStore]
+      - pattern: orchestrator_worker
+        confidence: medium
+        symbols: [Send]        # LangGraph map-reduce / fan-out primitive
+        note: "Send() to parallel worker nodes; confirm multiple target nodes"
+
+  autogen:
+    package: [autogen-agentchat, autogen-core, pyautogen, ag2]
+    rules:
+      - pattern: conversational_multi_agent
+        confidence: high
+        symbols: [GroupChat, GroupChatManager, RoundRobinGroupChat, SelectorGroupChat]
+      - pattern: react_loop
+        confidence: high
+        symbols: [AssistantAgent, ConversableAgent]
+        note: "Single AssistantAgent with tools = agent loop; >1 agent upgrades to V-D"
+      - pattern: human_in_the_loop
+        confidence: high
+        symbols: [UserProxyAgent]
+        also_match_kwargs: [human_input_mode]
+      - pattern: code_as_action
+        confidence: high
+        symbols: [CodeExecutorAgent, LocalCommandLineCodeExecutor, DockerCommandLineCodeExecutor]
+      - pattern: sandboxing
+        confidence: medium
+        symbols: [DockerCommandLineCodeExecutor]
+
+  crewai:
+    package: [crewai]
+    rules:
+      - pattern: role_based_team
+        confidence: high
+        symbols: [Crew, Agent]        # Agent(role=..., goal=..., backstory=...)
+        require_kwargs: [role]
+        note: "Role/goal/backstory triple is CrewAI's core idiom (V-C)"
+      - pattern: orchestrator_worker
+        confidence: high
+        require_kwargs_values: {process: "Process.hierarchical"}
+        note: "Process.hierarchical spawns a manager agent delegating to workers"
+      - pattern: structured_workflow
+        confidence: high
+        symbols: [Flow, "@start", "@listen", "@router"]
+      - pattern: episodic_memory
+        confidence: medium
+        require_kwargs_values: {memory: "True"}
+      - pattern: plan_then_execute
+        confidence: medium
+        require_kwargs_values: {planning: "True"}
+
+  metagpt:
+    package: [metagpt]
+    rules:
+      - pattern: role_based_team
+        confidence: high
+        symbols: [Team, Role, ProductManager, Architect, Engineer, QaEngineer]
+        note: "SOP-encoded role pipeline; the canonical V-C citation in the paper"
+      - pattern: shared_memory_blackboard
+        confidence: medium
+        symbols: [Environment, publish_message]
+        note: "MetaGPT agents coordinate via shared message pool / artifacts"
+
+  openai_agents_sdk:
+    package: [openai-agents, "@openai/agents"]
+    verified: 2026-07
+    rules:
+      - pattern: react_loop
+        confidence: high
+        imports: [agents]
+        symbols: [Agent, Runner, Runner.run, Runner.run_sync, function_tool]
+      - pattern: handoff
+        confidence: high
+        symbols: [handoff]
+        require_kwargs: [handoffs]     # Agent(handoffs=[...])
+        note: "Handoff as first-class primitive (V-E)"
+      - pattern: orchestrator_worker
+        confidence: medium
+        symbols: [as_tool]             # agents-as-tools = manager keeps control
+      - pattern: human_in_the_loop
+        confidence: medium
+        symbols: [InputGuardrail, OutputGuardrail]
+        note: "Guardrails + approval pauses; confirm approval usage before tagging"
+      - pattern: sandboxing
+        confidence: high
+        symbols: [SandboxAgent, UnixLocalSandboxClient]
+
+  claude_agent_sdk:
+    package: [claude-agent-sdk, "@anthropic-ai/claude-agent-sdk"]
+    verified: 2026-07
+    rules:
+      - pattern: react_loop
+        confidence: high
+        imports: [claude_agent_sdk]
+        symbols: [query, ClaudeSDKClient]
+      - pattern: protocol_integration
+        confidence: high
+        symbols: [create_sdk_mcp_server, tool]
+        also_match_kwargs: [mcp_servers]
+      - pattern: human_in_the_loop
+        confidence: high
+        also_match_kwargs: [permission_mode, can_use_tool]
+      - pattern: sandboxing
+        confidence: medium
+        also_match_kwargs: [allowed_tools, disallowed_tools]
+      - pattern: orchestrator_worker
+        confidence: medium
+        detect: "agents kwarg in ClaudeAgentOptions (subagent definitions)"
+
+  semantic_kernel:
+    package: [semantic-kernel, Microsoft.SemanticKernel]
+    rules:
+      - pattern: react_loop
+        confidence: high
+        symbols: [ChatCompletionAgent, FunctionChoiceBehavior.Auto]
+      - pattern: structured_workflow
+        confidence: high
+        symbols: [Process, ProcessBuilder, KernelProcess]
+      - pattern: conversational_multi_agent
+        confidence: high
+        symbols: [AgentGroupChat]
+      - pattern: orchestrator_worker
+        confidence: medium
+        symbols: [HandoffOrchestration, MagenticOrchestration]
+
+  llamaindex:
+    package: [llama-index, llama-index-core]
+    rules:
+      - pattern: react_loop
+        confidence: high
+        symbols: [ReActAgent, FunctionAgent, AgentRunner]
+      - pattern: structured_workflow
+        confidence: high
+        imports: [llama_index.core.workflow]
+        symbols: [Workflow, "@step", StartEvent, StopEvent]
+      - pattern: orchestrator_worker
+        confidence: medium
+        symbols: [AgentWorkflow]
+        require_kwargs: [root_agent]
+      - pattern: episodic_memory
+        confidence: medium
+        symbols: [ChatMemoryBuffer, VectorMemory, ComposableMemory]
+
+# ---------------------------------------------------------------------------
+# Framework-agnostic Tier 1 signals (config files, not code)
+# ---------------------------------------------------------------------------
+config_signals:
+  - pattern: protocol_integration
+    confidence: high
+    files: ["mcp.json", ".mcp.json", "mcp_config.json", "claude_desktop_config.json"]
+    package_any: [mcp, fastmcp, "@modelcontextprotocol/sdk"]
+  - pattern: sandboxing
+    confidence: medium
+    files: ["Dockerfile", "docker-compose.yml"]
+    require_cooccurrence: true   # only meaningful alongside an agent framework hit
+
+# ---------------------------------------------------------------------------
+# Tier 2 structural signatures (raw-SDK scaffolds; tree-sitter / AST heuristics)
+# Trigger only when an LLM SDK (openai, anthropic, google-genai, litellm) is a
+# dependency but no framework above matched.
+# ---------------------------------------------------------------------------
+tier2_signatures:
+  - pattern: react_loop
+    heuristic: >
+      while/for loop whose body contains (a) a chat-completion call
+      (client.chat.completions.create | client.messages.create | generate_content)
+      and (b) a branch on tool_calls / stop_reason == "tool_use" that appends
+      tool results back into the messages list.
+  - pattern: plan_then_execute
+    heuristic: >
+      Two distinct completion call sites where the first call's parsed output
+      (list/JSON of steps) is iterated over, and each iteration feeds a step
+      into the second call site or into tool execution.
+  - pattern: reflection
+    heuristic: >
+      Completion call whose prompt interpolates a prior completion's output
+      together with an error/critique signal (exception text, failed-test
+      output, or a critic-model response), inside a retry loop.
+  - pattern: code_as_action
+    heuristic: >
+      exec()/eval()/subprocess.run() whose argument dataflow originates from a
+      completion response. High-severity flag if no sandbox indicator present.
+  - pattern: orchestrator_worker
+    heuristic: >
+      Function that constructs >1 distinct system prompt and dispatches
+      completion calls per sub-task (often via asyncio.gather /
+      ThreadPoolExecutor), then feeds results into an aggregation call.
